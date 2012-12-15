@@ -1,4 +1,12 @@
-/* bp_account_record() and friends */
+/* bp_account_record() and friends
+ *
+ * Copyright (C) 2012 by Nadav Shemer <nadav.shemer@gmail.com>
+ *
+ * This file is released under the General Public License version 2 (GPL v2).
+ *
+ * This file may be redistributed under the terms of the GNU Public
+ * License.
+ */
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
