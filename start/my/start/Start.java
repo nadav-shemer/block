@@ -26,6 +26,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.Map;
@@ -99,27 +101,28 @@ public class Start {
 	{
 		Record record = new Record();
 		if (inb.length != 100) return null;
-		DataInputStream f = new DataInputStream(new ByteArrayInputStream(inb));
-		record.jiffies = f.readLong(); //8
-		record.i_no = f.readLong(); //16
-		record.block = f.readLong(); //24
-		record.devid = f.readInt(); //28
-		record.pgdevid = f.readInt(); //32
-		record.pgindex = f.readInt(); //36
-		record.size = f.readInt(); //40
-		record.pid = f.readInt(); //44        
-		record.tgid = f.readInt(); //48
-		record.reason = f.readInt(); //52           
+		ByteBuffer b = java.nio.ByteBuffer.wrap(inb);
+		b.order(ByteOrder.LITTLE_ENDIAN);
+		record.jiffies = b.getLong(); //8
+		record.i_no = b.getLong(); //16
+		record.block = b.getLong(); //24
+		record.devid = b.getInt(); //28
+		record.pgdevid = b.getInt(); //32
+		record.pgindex = b.getInt(); //36
+		record.size = b.getInt(); //40
+		record.pid = b.getInt(); //44        
+		record.tgid = b.getInt(); //48
+		record.reason = b.getInt(); //52           
 		StringBuilder s = new StringBuilder(16);
 		for (int i = 0; i < 16; i++) {
-			s.append((char)f.readByte());
-		}
-		record.devname = s.toString();
-		s = new StringBuilder(32);
-		for (int i = 0; i < 32; i++) {
-			s.append((char)f.readByte());
+			s.append((char)b.get());
 		}
 		record.procname = s.toString();
+		s = new StringBuilder(32);
+		for (int i = 0; i < 32; i++) {
+			s.append((char)b.get());
+		}
+		record.devname = s.toString();
 		record.make_keys();
 		return record;
 	}
@@ -193,7 +196,10 @@ public class Start {
 			try {
 				r = RecordGetter(inb);
 				if (r != null) {
-					System.out.println("Record time:" + r.jiffies + " i_no:" + r.i_no + " block:" + r.block + " devid:" + r.devid + " pgdevid:"	+ r.pgdevid + " pgindex:" + r.pgindex + " size:" + r.size + " pid:" + r.pid + "tgid:" + r.tgid + " reason:" + r.reason + " dev:" + r.devname + " proc:" + r.procname);
+					System.out.println("Record time:" + r.jiffies + " i_no:" + r.i_no + " block:" + r.block + " devid:" + r.devid + " pgdevid:"	+ r.pgdevid + " pgindex:" + r.pgindex + " size:" + r.size + " pid:" + r.pid + "tgid:" + r.tgid + " reason:" + r.reason + " dev:" + r.devname + " proc:" + r.procname + "\n");
+					System.out.println("Keys " + r.block_key + " : " + r.page_key + "\n");
+					if (r.block_key != null)System.out.println("Block key " + r.block_key.devid + ":" + r.block_key.block + ":" + r.block_key.size + "\n");
+					if (r.page_key != null)System.out.println("Page key " + r.page_key.devid + ":" + r.page_key.i_no + ":" + r.page_key.pgindex + "\n");
 					if (r.block_key != null) {
 						LinkedList<Record> l = block_map.get(r.block_key);
 						if (l == null) {
