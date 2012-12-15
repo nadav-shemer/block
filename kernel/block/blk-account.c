@@ -1,11 +1,22 @@
-/* bp_account_record() and friends
+/*
+ * blk-account.c - block and page event tracing
  *
  * Copyright (C) 2012 by Nadav Shemer <nadav.shemer@gmail.com>
  *
- * This file is released under the General Public License version 2 (GPL v2).
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
  *
- * This file may be redistributed under the terms of the GNU Public
- * License.
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; see the file COPYING.  If not, write to
+ * the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139,
+ * USA.
+ *
  */
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -14,7 +25,6 @@
 #include <linux/poll.h>
 #include <linux/pagemap.h>
 #include <linux/hugetlb.h>
-/* NADAV bp */
 #include <linux/kthread.h>
 #include <linux/freezer.h>
 #include <linux/proc_fs.h>
