@@ -20,8 +20,6 @@
 package my.start;
 
 import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -34,13 +32,23 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
-import com.sun.xml.internal.ws.util.ByteArrayBuffer;
-
 public class Start {
 	private static class BlockKey {
 		Long devid;
 		Long block;
 		Integer size;
+		@Override public boolean equals(Object obj) {
+			if (obj == null)
+				return false;
+			if ( !(obj instanceof BlockKey) ) return false;
+			BlockKey key = (BlockKey)obj;
+			return (devid.equals(key.devid) && block.equals(key.block) && size.equals(key.size) );
+		}
+		@Override public int hashCode() {
+			int hash = devid.hashCode();
+			hash = hash * 31 + block.hashCode();
+			return (hash * 31 + size.hashCode());
+		}
 	}
 	private static class PageKey {
 		Long devid;
@@ -48,20 +56,6 @@ public class Start {
 		Integer pgindex;
 	}
 	private static class Record {
-		/*
-        unsigned long jiffies;          * 8  (8) *
-        unsigned long i_no;             * 8  (16) *
-        unsigned long block;            * 8  (24) *
-        unsigned int devid;             * 4  (28) *
-        unsigned int pgdevid;           * 4  (32) *
-        int pgindex;                    * 4  (36) *
-        int size;                       * 4  (40) *
-        int pid;                        * 4  (44) *
-        int tgid;                       * 4  (48) *
-        int reason;                     * 4  (52) *
-        char comm[TASK_COMM_LEN]        * 16 (68) *
-        char devname[BDEVNAME_SIZE]     * 32 (100) *
-		 */
 		long jiffies;
 		long i_no;
 		long block;
@@ -247,24 +241,3 @@ public class Start {
 		}
 	}
 }
-/*
- * 
- 	private static void linkPages() {
-		for(LinkedList<Record> list:block_map.values()) {
-			PageKey k = null;
-			for (Record r:list) {
-				if ((r.block_key != null) && (r.page_key != null)) {
-					block_to_page.put(r.block_key, r.page_key);
-					page_to_block.put(r.page_key, r.block_key);
-					LinkedList<Record> l = page_to_block.get(r.page_key);
-					if (l == null) {
-						l = new LinkedList<>();
-						l.add(r.block_key);
-						page_to_block.put(r.page_key, l);
-					} else l.add(r);
-				}
-			}
-		}
-	}
-
-	*/
