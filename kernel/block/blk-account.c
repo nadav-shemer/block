@@ -418,6 +418,7 @@ static ssize_t bp_global_read(struct file *filp, char __user *buf, size_t len, l
 		if ((to_copy * sizeof(struct bp_account_line)) > len)
 			to_copy = len / sizeof(struct bp_account_line);
 		BUG_ON( to_copy == 0 );
+		smp_rmb();
 		if (copy_to_user(out, &(per_cpu(bp_line_buffer, cpu)[rptr]), to_copy * sizeof(struct bp_account_line))) {
 			res = -EFAULT;
 			break;
