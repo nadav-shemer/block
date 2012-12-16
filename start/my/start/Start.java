@@ -41,8 +41,7 @@ public class Start {
 			if (obj == null)
 				return false;
 			if ( !(obj instanceof BlockKey) ) return false;
-			BlockKey key = (BlockKey)obj;
-			return (devid.equals(key.devid) && block.equals(key.block) && size.equals(key.size) );
+			return (block_Comparator.compare((BlockKey)obj, this)==0);
 		}
 		@Override public int hashCode() {
 			int hash = devid.hashCode();
@@ -54,6 +53,17 @@ public class Start {
 		Long devid;
 		Long i_no;
 		Integer pgindex;
+		@Override public boolean equals(Object obj) {
+			if (obj == null)
+				return false;
+			if ( !(obj instanceof PageKey) ) return false;
+			return (page_Comparator.compare((PageKey)obj, this)==0);
+		}
+		@Override public int hashCode() {
+			int hash = devid.hashCode();
+			hash = hash * 31 + i_no.hashCode();
+			return (hash * 31 + pgindex.hashCode());
+		}
 	}
 	private static class Record {
 		long jiffies;
