@@ -23,184 +23,172 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Start {
+	
 	private static enum Reason {
-		REASON_READ, REASON_GET, REASON_DIRTY, REASON_ACCESSED, REASON_INACTIVE, REASON_ACTIVATED, REASON_EVICTED
+		REASON_READ, REASON_GET, REASON_DIRTY, REASON_ACCESSED, REASON_INACTIVE, REASON_ACTIVATED, REASON_EVICTED;
+		
+		public static Reason get(int reason){
+			return Reason.values().length > reason && reason >= 0 ? Reason.values()[reason] : null;
+		}
 	}
 	
-	private static Reason int_to_reason(int reason){
-		switch (reason) {
-			case 0: return Reason.REASON_READ;
-			case 1: return Reason.REASON_GET;
-			case 2: return Reason.REASON_DIRTY;
-			case 3: return Reason.REASON_ACCESSED;
-			case 4: return Reason.REASON_INACTIVE;
-			case 5: return Reason.REASON_ACTIVATED;
-			case 6: return Reason.REASON_EVICTED;
-			default: return null;
+	private static class Historeason {
+		AtomicInteger read;
+		AtomicInteger get;
+		AtomicInteger dirty;
+		AtomicInteger accessed;
+		AtomicInteger inactive;
+		AtomicInteger activated;
+		AtomicInteger evicted;
+
+		public Historeason() {
+			this.read = new AtomicInteger();
+			this.get = new AtomicInteger();
+			this.dirty = new AtomicInteger();
+			this.accessed = new AtomicInteger();
+			this.inactive = new AtomicInteger();
+			this.activated = new AtomicInteger();
+			this.evicted = new AtomicInteger();
+		}
+
+		@Override
+		public String toString() {
+			return new StringBuilder()
+			.append("read:").append(read.get())
+			.append(" get:").append(get.get())
+			.append(" dirty:").append(dirty.get())
+			.append(" accessed:").append(accessed.get())
+			.append(" inactive:").append(inactive.get())
+			.append(" active:").append(activated.get())
+			.append(" evicted:").append(evicted.get()).toString();
 		}
 	}
 
+	private static void HistoryAddReason(Historeason h, Reason e){
+		switch (e) {
+			case REASON_ACCESSED:
+				h.accessed.incrementAndGet();
+				break;
+			case REASON_ACTIVATED:
+				h.activated.incrementAndGet();
+				break;
+			case REASON_DIRTY:
+				h.dirty.incrementAndGet();
+				break;
+			case REASON_EVICTED:
+				h.evicted.incrementAndGet();
+				break;
+			case REASON_GET:
+				h.get.incrementAndGet();
+				break;
+			case REASON_INACTIVE:
+				h.inactive.incrementAndGet();
+				break;
+			case REASON_READ:
+				h.read.incrementAndGet();
+				break;
+		}
+	}
 	
 	private static class BlockKey {
-		Long devid;
-		Long block;
-		Integer size;
-		@Override public boolean equals(Object obj) {
-			if (obj == null)
-				return false;
+		final Long devid;
+		final Long block;
+		final Integer size;
+		
+		public BlockKey(Long devid, Long block, Integer size) {
+			this.devid = devid;
+			this.block = block;
+			this.size = size;
+		}
+		
+		@Override 
+		public boolean equals(Object obj) {
+			if (obj == null) return false;
+			if (obj == this) return true;
 			if ( !(obj instanceof BlockKey) ) return false;
 			return (block_Comparator.compare((BlockKey)obj, this)==0);
 		}
-		@Override public int hashCode() {
+		
+		@Override 
+		public int hashCode() {
 			int hash = devid.hashCode();
 			hash = hash * 31 + block.hashCode();
 			return (hash * 31 + size.hashCode());
 		}
 	}
+	
 	private static class PageKey {
-		Long devid;
-		Long i_no;
-		Integer pgindex;
-		@Override public boolean equals(Object obj) {
-			if (obj == null)
-				return false;
+		final Long devid;
+		final Long i_no;
+		final Integer pgindex;
+		
+		public PageKey(Long devid, Long i_no, Integer pgindex) {
+			this.devid = devid;
+			this.i_no = i_no;
+			this.pgindex = pgindex;
+		}
+
+		@Override 
+		public boolean equals(Object obj) {
+			if (obj == null) return false;
+			if (obj == this) return true;
 			if ( !(obj instanceof PageKey) ) return false;
 			return (page_Comparator.compare((PageKey)obj, this)==0);
 		}
-		@Override public int hashCode() {
+		
+		@Override 
+		public int hashCode() {
 			int hash = devid.hashCode();
 			hash = hash * 31 + i_no.hashCode();
 			return (hash * 31 + pgindex.hashCode());
 		}
 	}
-	private static class HistoryEvent {
-		Long jiffies;
-		Integer pid;
-		Integer tgid;
-		Reason reason;
-		String procname;
-		@Override public boolean equals(Object obj) {
-			if (obj == null)
-				return false;
-			if ( !(obj instanceof HistoryEvent) ) return false;
-			return (history_event_Comparator.compare((HistoryEvent)obj, this)==0);
-		}
-		@Override public int hashCode() {
-			int hash = jiffies.hashCode();
-			hash = hash * 31 + pid.hashCode();
-			hash = hash * 31 + tgid.hashCode();
-			return (hash * 31 + reason.hashCode());
-		}
-	}
-	private static class PageHistory {
-		PageKey page;
-		String devname;
-		LinkedList<BlockKey> blocks;
-		LinkedList<HistoryEvent> history;
-	}
-	private static class BlockHistory {
-		BlockKey block;
-		String devname;
-		LinkedList<PageKey> pages;
-		LinkedList<HistoryEvent> history;
-	}
-	private static void read_block_history(BlockHistory h) {
-		int read = 0;
-		int get = 0;
-		int dirty = 0;
-		int accessed = 0;
-		int inactive = 0;
-		int activated = 0;
-		int evicted = 0;
-		for(HistoryEvent e:h.history) {
-			switch (e.reason) {
-				case REASON_ACCESSED:
-					accessed++;
-					break;
-				case REASON_ACTIVATED:
-					activated++;
-					break;
-				case REASON_DIRTY:
-					dirty++;
-					break;
-				case REASON_EVICTED:
-					evicted++;
-					break;
-				case REASON_GET:
-					get++;
-					break;
-				case REASON_INACTIVE:
-					inactive++;
-					break;
-				case REASON_READ:
-					read++;
-					break;
-			}
-		}
-		System.out.println("BlockHistory " + h.devname + " block:" + h.block.devid + ":" + h.block.block + ":" + h.block.size + " nopage\n");
-		for (PageKey page:h.pages) {
-			System.out.println("BlockHistory page:" + page.devid + ":" + page.i_no + ":" + page.pgindex + "\n");
-		}
-		System.out.println("BlockHistory read:" + read + " get:" + get + " dirty:" + dirty + " accessed:" + accessed + " inactive:" + inactive + " active:" + activated + " evicted:" + evicted + "\n");
-	}
+	private static class PageHistoryData {
+		final PageKey page;
+		final String devname;
+		final ConcurrentSkipListSet<BlockKey> blocks;
+		final Historeason counters;
 
-	private static void read_page_history(PageHistory h) {
-		int read = 0;
-		int get = 0;
-		int dirty = 0;
-		int accessed = 0;
-		int inactive = 0;
-		int activated = 0;
-		int evicted = 0;
-		for(HistoryEvent e:h.history) {
-			switch (e.reason) {
-				case REASON_ACCESSED:
-					accessed++;
-					break;
-				case REASON_ACTIVATED:
-					activated++;
-					break;
-				case REASON_DIRTY:
-					dirty++;
-					break;
-				case REASON_EVICTED:
-					evicted++;
-					break;
-				case REASON_GET:
-					get++;
-					break;
-				case REASON_INACTIVE:
-					inactive++;
-					break;
-				case REASON_READ:
-					read++;
-					break;
-			}
+		public PageHistoryData(PageKey page, String devname) {
+			this.page = page;
+			this.devname = devname;
+			this.blocks = new ConcurrentSkipListSet<>(block_Comparator);
+			this.counters = new Historeason();
 		}
-		System.out.println("PageHistory " + h.devname + " page:" + h.page.devid + ":" + h.page.i_no + ":" + h.page.pgindex + "\n");
-		for (BlockKey block:h.blocks) {
-			System.out.println("PageHistory block:" + block.devid + ":" + block.block + ":" + block.size + "\n");
-		}
-		System.out.println("PageHistory read:" + read + " get:" + get + " dirty:" + dirty + " accessed:" + accessed + " inactive:" + inactive + " active:" + activated + " evicted:" + evicted + "\n");
 	}
+	private static class BlockHistoryData {
+		final BlockKey block;
+		final String devname;
+		final ConcurrentSkipListSet<PageKey> pages;
+		final Historeason counters;
+
+		public BlockHistoryData(BlockKey block, String devname) {
+			this.block = block;
+			this.devname = devname;
+			this.pages = new ConcurrentSkipListSet<>(page_Comparator);
+			this.counters = new Historeason();
+		}
+	}
+	
 	private static class Record {
 		long jiffies;
 		long i_no;
 		long block;
-		long devid; /* unsigned int */
-		long pgdevid; /* unsigned int */
+		/** unsigned int */
+		long devid; 
+		/** unsigned int */
+		long pgdevid; 
 		int pgindex;
 		int size;
 		int pid;
@@ -210,32 +198,13 @@ public class Start {
 		String procname;
 		BlockKey block_key;
 		PageKey page_key;
-		HistoryEvent history_data;
 		
 		public void make_keys() {
-			if (block_key == null) {
-				if (block != 0) {
-					block_key = new BlockKey();
-					block_key.devid = devid;
-					block_key.block = block;
-					block_key.size = size;
-				}
+			if (block_key == null && block != 0) {
+				block_key = new BlockKey(devid, block, size);
 			}
-			if (page_key == null) {
-				if (i_no != 0) {
-					page_key = new PageKey();
-					page_key.devid = pgdevid;
-					page_key.i_no = i_no;
-					page_key.pgindex = pgindex;
-				}
-			}
-			if (history_data == null) {
-				history_data = new HistoryEvent();
-				history_data.jiffies = jiffies;
-				history_data.pid = pid;
-				history_data.tgid = tgid;
-				history_data.reason = int_to_reason(reason);
-				history_data.procname = procname;
+			if (page_key == null && i_no != 0) {
+				page_key = new PageKey(pgdevid, i_no, pgindex);
 			}
 		}
 	}
@@ -257,13 +226,25 @@ public class Start {
 		record.tgid = b.getInt(); //48
 		record.reason = b.getInt(); //52           
 		StringBuilder s = new StringBuilder(16);
+		int found_end = 0;
 		for (int i = 0; i < 16; i++) {
-			s.append((char)b.get());
+			char c = (char)b.get();
+			if (found_end == 1)
+				continue;
+			if (c != 0)
+				s.append(c);
+			else found_end = 1;
 		}
 		record.procname = s.toString();
 		s = new StringBuilder(32);
+		found_end = 0;
 		for (int i = 0; i < 32; i++) {
-			s.append((char)b.get());
+			char c = (char)b.get();
+			if (found_end == 1)
+				continue;
+			if (c != 0)
+				s.append(c);
+			else found_end = 1;
 		}
 		record.devname = s.toString();
 		record.make_keys();
@@ -281,7 +262,6 @@ public class Start {
 				return null;
 		}
 		return null;
-//		throw new Exception("Bad read size");
 	}
 	
 	private static class Block_Comparator implements Comparator<BlockKey> {
@@ -312,31 +292,13 @@ public class Start {
 		}
 	}
 	
-	private static class History_Event_Comparator implements Comparator<HistoryEvent> {
-		@Override
-		public int compare(HistoryEvent o1, HistoryEvent o2) {
-			int a = o1.jiffies.compareTo(o2.jiffies);
-			if (a == 0) {
-				int b = o1.reason.compareTo(o2.reason);
-				if (b == 0) {
-					int c = o1.pid.compareTo(o2.pid);
-					if (c == 0) {
-						return o1.tgid.compareTo(o2.tgid);
-					}
-					return c;
-				}
-				return b;
-			}
-			return a;
-		}
-	}
 	
 	private static final Block_Comparator block_Comparator = new Block_Comparator();
 	private static final Page_Comparator page_Comparator = new Page_Comparator();
-	private static final History_Event_Comparator history_event_Comparator = new History_Event_Comparator();
 
-	private static ConcurrentSkipListMap<BlockKey,ConcurrentLinkedQueue<Record>> block_map = new ConcurrentSkipListMap<>(block_Comparator);
-	private static ConcurrentSkipListMap<PageKey,ConcurrentLinkedQueue<Record>> page_map = new ConcurrentSkipListMap<>(page_Comparator);
+
+	private static final ConcurrentSkipListMap<BlockKey,BlockHistoryData> block_map = new ConcurrentSkipListMap<>(block_Comparator);
+	private static final ConcurrentSkipListMap<PageKey,PageHistoryData> page_map = new ConcurrentSkipListMap<>(page_Comparator);
 
 	private static class RecordParser implements Runnable {
 		File inf;
@@ -354,31 +316,36 @@ public class Start {
 				try {
 					r = RecordGetter(inb);
 					if (r != null) {
+						if (r.devname.compareTo("sda1") != 0)
+							continue;
 //						System.out.println("Record time:" + r.jiffies + " block=" + r.devid + ":" + r.block + ":" + r.size + " page=" + r.pgdevid + ":" + r.i_no + ":" + r.pgindex + " pid:" + r.pid + ":" + r.tgid + " reason:" + int_to_reason(r.reason).toString() + " proc:" + r.procname + "\n");
 ////						System.out.println("Keys " + r.block_key + " : " + r.page_key + "\n");
 ////						if (r.block_key != null)System.out.println("Block key " + r.block_key.devid + ":" + r.block_key.block + ":" + r.block_key.size + "\n");
 ////						if (r.page_key != null)System.out.println("Page key " + r.page_key.devid + ":" + r.page_key.i_no + ":" + r.page_key.pgindex + "\n");
 						if (r.block_key != null) {
-							ConcurrentLinkedQueue<Record> l = block_map.get(r.block_key);
-							if (l == null) {
-								l = new ConcurrentLinkedQueue<>();
-								l.add(r);
-								ConcurrentLinkedQueue<Record> o = block_map.putIfAbsent(r.block_key, l);
-								if (o != null) {
-									o.add(r);
-								}
-							} else l.add(r);
+							BlockHistoryData b = block_map.get(r.block_key);
+							if (b == null) {
+								b = new BlockHistoryData(r.block_key, r.devname);
+								BlockHistoryData o = block_map.putIfAbsent(r.block_key, b);
+								if (o != null)
+									b = o;
+							}
+							HistoryAddReason(b.counters, Reason.get(r.reason));
+							if (r.page_key != null)
+								b.pages.add(r.page_key);
 						}
 						if (r.page_key != null) {
-							ConcurrentLinkedQueue<Record> l = page_map.get(r.page_key);
-							if (l == null) {
-								l = new ConcurrentLinkedQueue<>();
-								l.add(r);
-								ConcurrentLinkedQueue<Record> o = page_map.putIfAbsent(r.page_key, l);
-								if (o != null) {
-									o.add(r);
-								}
-							} else l.add(r);
+							PageHistoryData p = page_map.get(r.page_key);
+							if (p == null) {
+								p = new PageHistoryData(r.page_key, r.devname);
+								PageHistoryData o = page_map.putIfAbsent(r.page_key, p);
+								if (o != null)
+									p = o;
+							}
+							if (r.block_key == null)
+								HistoryAddReason(p.counters, Reason.get(r.reason));
+							else
+								p.blocks.add(r.block_key);
 						}
 					}
 				} catch (IOException e) {
@@ -388,19 +355,42 @@ public class Start {
 			}
 		}
 	}
-	
-	private static Map<BlockKey,BlockHistory> block_history = new HashMap<>();
-	private static Map<PageKey,PageHistory> page_history = new HashMap<>();
 
-	private static LinkedList<BlockHistory> old_block_histories = new LinkedList<>();
-	private static LinkedList<PageHistory> old_page_histories = new LinkedList<>();
+	private static void print_block_data(FileWriter w, BlockHistoryData h) throws IOException {
+		w.write("BlockHistory " + h.devname + " block:" + h.block.devid + ":" + h.block.block + ":" + h.block.size + "\n");
+		for (PageKey page:h.pages) {
+			w.write("BlockHistory page:" + page.devid + ":" + page.i_no + ":" + page.pgindex + "\n");
+		}
+		w.write("BlockHistory " + h.counters.toString() + "\n");
+	}
+
+	private static void print_page_data(FileWriter w, PageHistoryData h) throws IOException {
+		Historeason c = new Historeason();
+		w.write("PageHistory " + h.devname + " page:" + h.page.devid + ":" + h.page.i_no + ":" + h.page.pgindex + "\n");
+		for (BlockKey block:h.blocks) {
+			BlockHistoryData b = block_map.get(block);
+			if (b != null) {
+				c.read.addAndGet(b.counters.read.get());
+				c.get.addAndGet(b.counters.get.get());
+				c.dirty.addAndGet(b.counters.dirty.get());
+				c.accessed.addAndGet(b.counters.accessed.get());
+				c.inactive.addAndGet(b.counters.inactive.get());
+				c.activated.addAndGet(b.counters.activated.get());
+				c.evicted.addAndGet(b.counters.evicted.get());
+			}
+			w.write("PageHistory block:" + block.devid + ":" + block.block + ":" + block.size + "\n");
+		}
+		w.write("PageHistory " + h.counters.toString() + "\n");
+		w.write("PageHistory blocks " + c.toString() + "\n");
+	}
 
 	/**
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		System.out.println("Hello world\n");
+		System.out.println("Hello world");
 		int i = 0;
+		
 		while (true) {
 			String infname = new String("/proc/bp/kbpd" + i);
 			String tname = new String("Read"+i);
@@ -410,104 +400,32 @@ public class Start {
 				Thread t = new Thread(inr, tname); 
 				t.start();
 			} catch (FileNotFoundException e) {
-				System.out.println("Cant open file " + e.getMessage() + "\n");
+				System.out.println("Cant open file " + e.getMessage());
 				break;
 			}
 			i++;
 		}
 		while (true) {
 			try {
-				Thread.sleep(1000 * 10);
-			} catch (InterruptedException e) {
-				System.out.println("Interrupt " + e.getMessage() + "\n");
-				break;
+				Thread.sleep(60000);
+			} catch (InterruptedException e1) {
+				System.out.println("Interrupted " + e1.getMessage());
 			}
-			Entry<BlockKey,ConcurrentLinkedQueue<Record>> be = block_map.pollFirstEntry();
-			while (be != null) {
-				ConcurrentLinkedQueue<Record> l = be.getValue();
-				if (l == null) {
-					be = block_map.pollFirstEntry();
-					continue;
+			FileWriter w;
+			try {
+				w = new FileWriter("/remote/mnt/raid/workspace/hist_data");
+				for(BlockHistoryData h:block_map.values()) {
+					print_block_data(w, h);
 				}
-				Record r = l.poll();
-				while (r != null) {
-					BlockHistory h = block_history.get(r.block_key);
-					if (h == null) {
-						h = new BlockHistory();
-						h.block = r.block_key;
-						h.devname = r.devname;
-						h.pages = new LinkedList<>();
-						if (r.page_key != null)
-							h.pages.add(r.page_key);
-						h.history = new LinkedList<>();
-						h.history.add(r.history_data);
-						block_history.put(r.block_key, h);
-					} else {
-						if (r.page_key != null) {
-							int found = 0;
-							for (PageKey k:h.pages) {
-								if (r.page_key.equals(k)) {
-									found = 1;
-									break;
-								}
-							}
-							if (found == 0)
-								h.pages.add(r.page_key);
-						}
-						h.history.add(r.history_data);
-					}
-					r = l.poll();
+				for(PageHistoryData h:page_map.values()) {
+					print_page_data(w, h);
 				}
-				be = block_map.pollFirstEntry();
+				w.close();
+			} catch (IOException e) {
+				System.out.println("Cant open file " + e.getMessage());
+				System.exit(1);
 			}
-			Entry<PageKey,ConcurrentLinkedQueue<Record>> pe = page_map.pollFirstEntry();
-			while (pe != null) {
-				ConcurrentLinkedQueue<Record> l = pe.getValue();
-				if (l == null) {
-					pe = page_map.pollFirstEntry();
-					continue;
-				}
-				Record r = l.poll();
-				while (r != null) {
-					PageHistory h = page_history.get(r.page_key);
-					if (h == null) {
-						h = new PageHistory();
-						h.page = r.page_key;
-						h.devname = r.devname;
-						h.blocks = new LinkedList<>();
-						if (r.block_key != null)
-							h.blocks.add(r.block_key);
-						h.history = new LinkedList<>();
-						h.history.add(r.history_data);
-						page_history.put(r.page_key, h);
-					} else {
-						if (r.block_key != null) {
-							int found = 0;
-							for (BlockKey k:h.blocks) {
-								if (r.block_key.equals(k)) {
-									found = 1;
-									break;
-								}
-							}
-							if (found == 0)
-								h.blocks.add(r.block_key);
-						}
-						h.history.add(r.history_data);
-					}
-					r = l.poll();
-				}
-				pe = page_map.pollFirstEntry();
-			}
-			for(BlockHistory h:block_history.values()) {
-				read_block_history(h);
-				old_block_histories.add(h);
-			}
-			for(PageHistory h:page_history.values()) {
-				read_page_history(h);
-				old_page_histories.add(h);
-			}
-			block_history = new HashMap<>();
-			page_history = new HashMap<>();
+
 		}
 	}
 }
